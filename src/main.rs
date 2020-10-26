@@ -25,6 +25,8 @@ fn hsv_to_rgb(h: u16, s: u16, v: u8) -> (u8, u8, u8) {
 
 fn main() {
     let led_count = 144;
+    let rainbow_width = 2;
+    let rainbow_ratio = 360.0 / (led_count * rainbow_width) as f32;
     let exit = Arc::new(AtomicBool::new(false));
     let e = exit.clone();
 
@@ -34,27 +36,24 @@ fn main() {
     .expect("Error setting Ctrl-C handler");
 
     let mut blinkt = Blinkt::with_spi(16_000_000, led_count).unwrap();
-    blinkt.set_all_pixels_brightness(1.0);
+    blinkt.set_all_pixels_brightness(0.5);
 
     while !exit.load(Ordering::Relaxed) {
-        let millis = SystemTime::now()
+        let time = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("Unable to get system time")
-            .as_millis();
-
-        let time = ((millis >> 6) / 2) as u8;
+            .as_millis() as usize
+            / 6;
 
         for pixel in 0..led_count {
-            let p = time.wrapping_sub(pixel as u8) as u16 * 4;
-
-            let h = p.wrapping_mul(359) / 256;
+            let offset = (pixel as f32 * rainbow_ratio).round() as usize;
+            let h = ((time + offset) % 360) as u16;
             print!("{}, ", h);
             let (r, g, b) = hsv_to_rgb(h, 255, 255);
 
             blinkt.set_pixel(pixel, r, g, b)
         }
-
-        println!("time: {}", time);
+        println!("\n");
 
         blinkt.show().unwrap();
 
