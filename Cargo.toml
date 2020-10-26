@@ -1,0 +1,18 @@
+[package]
+name = "lightbox"
+version = "0.1.0"
+authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+# bluez = "0.1.3"
+# async-std = {version = "1.6.2", features = ["unstable"]}
+# async-ctrlc = "1.2.0"
+# hound = "3.4.0"
+# microfft = { version = "0.3.0", default-features = false, features = ["maxn-1024"]}
+# png = "0.16.7"
+# scarlet = "1.1.0"
+
+# LED SPI
+blinkt = "0.5"
+ctrlc = "3.1.7"
