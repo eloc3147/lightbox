@@ -8,11 +8,22 @@ edition = "2018"
 # bluez = "0.1.3"
 # async-std = {version = "1.6.2", features = ["unstable"]}
 # async-ctrlc = "1.2.0"
-# hound = "3.4.0"
-# microfft = { version = "0.3.0", default-features = false, features = ["maxn-1024"]}
-# png = "0.16.7"
-# scarlet = "1.1.0"
 
-# LED SPI
 blinkt = "0.5"
 ctrlc = "3.1.7"
+rodio = "0.12"
+cpal = "0.12"
+microfft = { version = "0.3.0", default-features = false, features = ["maxn-256"]}
+average = "0.10"
+
+# Waiting on https://github.com/RustAudio/cpal/issues/473
+[patch.crates-io]
+rodio = {git = "https://github.com/RustAudio/rodio"}
+cpal = {git = "https://github.com/RustAudio/cpal"}
+
+[patch.'https://github.com/eloc3147/rodio/']
+cpal = {git = "https://github.com/RustAudio/cpal"}
+
+[profile.dev]
+opt-level = 3
+# lto = true
