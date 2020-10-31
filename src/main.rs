@@ -4,7 +4,7 @@ use cmap::COLORMAP;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -14,71 +14,96 @@ use rodio::source::Buffered;
 use rodio::{Decoder, Device, Source};
 
 use cpal::traits::{DeviceTrait, HostTrait};
+use thread_priority::unix::{
+    set_thread_priority_and_policy, thread_native_id, RealtimeThreadSchedulePolicy,
+    ThreadSchedulePolicy,
+};
+use thread_priority::ThreadPriority;
 
 use average::Mean;
 
+const LED_COUNT: usize = 144;
 const LIGHT_BUF_LEN: usize = 256;
-const LIGHT_AVG_DURATION: f32 = 0.1;
+const LIGHT_AVG_DURATION: f32 = 0.05;
 const LIGHT_SAMPLE_RATE: usize = 30;
 const VOLUME_MUL: f32 = 1.0 / 10000.0;
 
 const LIGHT_AVG_COUNT: usize = (LIGHT_AVG_DURATION * LIGHT_SAMPLE_RATE as f32) as usize;
-const LIGHT_SAMPLE_TIME: Duration = Duration::from_millis(1000 / LIGHT_SAMPLE_RATE as u64);
 
-fn light_loop(mut source: Buffered<Decoder<BufReader<File>>>, exit: Arc<AtomicBool>) {
+fn light_loop(
+    source: Buffered<Decoder<BufReader<File>>>,
+    exit: Arc<AtomicBool>,
+    time_rx: mpsc::Receiver<Instant>,
+) {
+    let sample_rate = source.sample_rate();
+    let led_sample_rate = sample_rate / LIGHT_SAMPLE_RATE as u32;
     let mut sample_buf = [0f32; LIGHT_BUF_LEN];
     let mut averaging_buf = [0f64; LIGHT_BUF_LEN / 2 * LIGHT_AVG_COUNT];
     let mut avg_index = 0usize;
-    let led_count = 144;
 
-    let mut blinkt = Blinkt::with_spi(16_000_000, led_count).unwrap();
+    set_thread_priority_and_policy(
+        thread_native_id(),
+        ThreadPriority::Max,
+        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin),
+    )
+    .unwrap();
+
+    let mut blinkt = Blinkt::with_spi(16_000_000, LED_COUNT).unwrap();
     blinkt.set_all_pixels_brightness(1.0);
 
-    // let ratio = led_count as f32 / TURBO_COLORMAP.len() as f32;
-    // for i in 0..led_count {
-    //     let color = TURBO_COLORMAP[(i as f32 * ratio) as usize];
-    //     blinkt.set_pixel(i, color[0], color[1], color[2]);
-    // }
+    let start_time = time_rx.recv().unwrap();
 
-    while !exit.load(Ordering::Relaxed) {
-        let sample_start = Instant::now();
+    let mut sample_count = 0u128;
+    for sample in source {
+        if exit.load(Ordering::Relaxed) {
+            break;
+        }
 
-        for i in 0..LIGHT_BUF_LEN {
-            match source.next() {
-                Some(s) => sample_buf[i] = s as f32,
-                None => return,
+        let sample_index = (sample_count % led_sample_rate as u128) as usize;
+
+        if sample_index < LIGHT_BUF_LEN {
+            sample_buf[sample_index] = sample as f32;
+        }
+
+        if sample_index == LIGHT_BUF_LEN - 1 {
+            let spectrum = microfft::real::rfft_256(&mut sample_buf);
+
+            for (i, sample) in spectrum.iter().enumerate() {
+                let bin_index = i * LIGHT_AVG_COUNT;
+                averaging_buf[bin_index + (avg_index % LIGHT_AVG_COUNT)] =
+                    (sample.l1_norm() * VOLUME_MUL) as f64;
+                let mut value = averaging_buf[(bin_index)..(bin_index + LIGHT_AVG_COUNT)]
+                    .iter()
+                    .collect::<Mean>()
+                    .mean();
+
+                if value > 1.0 {
+                    value = 1.0;
+                }
+                let color = COLORMAP[(value * (COLORMAP.len() - 1) as f64) as usize];
+
+                blinkt.set_pixel_rgbb(
+                    i + 8,
+                    color[0],
+                    color[1],
+                    color[2],
+                    (0.75 + value / 4.0) as f32,
+                );
+
+                blinkt.show().unwrap();
+                avg_index = avg_index.wrapping_add(1);
             }
         }
 
-        let spectrum = microfft::real::rfft_256(&mut sample_buf);
-        for (i, sample) in spectrum.iter().enumerate() {
-            averaging_buf[i * LIGHT_AVG_COUNT + (avg_index % LIGHT_AVG_COUNT)] =
-                (sample.l1_norm() * VOLUME_MUL) as f64;
-            let mut value = averaging_buf[(i * LIGHT_AVG_COUNT)..((i + 1) * LIGHT_AVG_COUNT)]
-                .iter()
-                .collect::<Mean>()
-                .mean();
-
-            if value > 1.0 {
-                value = 1.0;
-            }
-            let color = COLORMAP[(value * (COLORMAP.len() - 1) as f64) as usize];
-
-            blinkt.set_pixel_rgbb(
-                i + 8,
-                color[0],
-                color[1],
-                color[2],
-                (0.75 + value / 4.0) as f32,
-            );
-        }
-        blinkt.show().unwrap();
-
-        if let Some(duration) = LIGHT_SAMPLE_TIME.checked_sub(sample_start.elapsed()) {
+        if let Some(duration) =
+            Duration::from_millis((sample_count / sample_rate as u128 * 1000) as u64)
+                .checked_sub(start_time.elapsed())
+        {
+            println!("{:#?}", duration);
             thread::sleep(duration);
         }
 
-        avg_index = avg_index.wrapping_add(1);
+        sample_count += 1;
     }
 
     blinkt.set_all_pixels_brightness(0.0);
@@ -126,19 +151,19 @@ fn main() {
         .buffered();
 
     // Start LED control
+    let (time_tx, time_rx) = mpsc::sync_channel(0);
     let buf = source.clone();
     let e = exit.clone();
     println!("Starting light loop");
     let led_thread = thread::spawn(move || {
-        light_loop(buf, e);
+        light_loop(buf, e, time_rx);
     });
 
     // Play audio
     sink.append(source);
     sink.play();
+    time_tx.send(Instant::now()).unwrap();
 
-    while !exit.load(Ordering::Relaxed) {}
-
+    led_thread.join().unwrap();
     println!("Exiting");
-    led_thread.join().unwrap()
 }

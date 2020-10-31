@@ -280,6 +280,7 @@ dependencies = [
  "ctrlc",
  "microfft",
  "rodio",
+ "thread-priority",
 ]
 
 [[package]]
@@ -621,6 +622,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "thread-priority"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "332f879b8aa5d2ea749ce5776a69c1d7893b75f30b7c6e525fd695c4777e54e7"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
