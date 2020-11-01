@@ -11,16 +11,19 @@ edition = "2018"
 
 blinkt = "0.5"
 ctrlc = "3.1.7"
-rodio = "0.12"
+rodio = { version = "0.12", default-features = false, features = ["wav"]}
 cpal = "0.12"
 microfft = { version = "0.3.0", default-features = false, features = ["maxn-256"]}
 average = "0.10"
 thread-priority = "0.2.0"
+num-complex = "0.2.4"
 
 # Waiting on https://github.com/RustAudio/cpal/issues/473
 [patch.crates-io]
 rodio = {git = "https://github.com/RustAudio/rodio"}
 cpal = {git = "https://github.com/RustAudio/cpal"}
 
-[patch.'https://github.com/eloc3147/rodio/']
-cpal = {git = "https://github.com/RustAudio/cpal"}
+[profile.dev]
+opt-level = 3
+codegen-units = 1
+lto = true

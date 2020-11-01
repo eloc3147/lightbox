@@ -24,7 +24,7 @@ use average::Mean;
 
 const LED_COUNT: usize = 144;
 const LIGHT_BUF_LEN: usize = 256;
-const LIGHT_AVG_DURATION: f32 = 0.05;
+const LIGHT_AVG_DURATION: f32 = 0.25;
 const LIGHT_SAMPLE_RATE: usize = 30;
 const VOLUME_MUL: f32 = 1.0 / 10000.0;
 
@@ -35,8 +35,8 @@ fn light_loop(
     exit: Arc<AtomicBool>,
     time_rx: mpsc::Receiver<Instant>,
 ) {
-    let sample_rate = source.sample_rate();
-    let led_sample_rate = sample_rate / LIGHT_SAMPLE_RATE as u32;
+    let sample_rate = dbg!(source.sample_rate());
+    let led_sample_rate = dbg!(sample_rate / LIGHT_SAMPLE_RATE as u32);
     let mut sample_buf = [0f32; LIGHT_BUF_LEN];
     let mut averaging_buf = [0f64; LIGHT_BUF_LEN / 2 * LIGHT_AVG_COUNT];
     let mut avg_index = 0usize;
@@ -71,7 +71,7 @@ fn light_loop(
             for (i, sample) in spectrum.iter().enumerate() {
                 let bin_index = i * LIGHT_AVG_COUNT;
                 averaging_buf[bin_index + (avg_index % LIGHT_AVG_COUNT)] =
-                    (sample.l1_norm() * VOLUME_MUL) as f64;
+                    (sample.log(10.0).norm() / 10.0) as f64;
                 let mut value = averaging_buf[(bin_index)..(bin_index + LIGHT_AVG_COUNT)]
                     .iter()
                     .collect::<Mean>()
@@ -87,19 +87,18 @@ fn light_loop(
                     color[0],
                     color[1],
                     color[2],
-                    (0.75 + value / 4.0) as f32,
+                    (0.5 + value / 2.0) as f32,
                 );
 
-                blinkt.show().unwrap();
                 avg_index = avg_index.wrapping_add(1);
             }
+            blinkt.show().unwrap();
         }
 
         if let Some(duration) =
-            Duration::from_millis((sample_count / sample_rate as u128 * 1000) as u64)
+            Duration::from_micros((sample_count * 1000000 / sample_rate as u128) as u64)
                 .checked_sub(start_time.elapsed())
         {
-            println!("{:#?}", duration);
             thread::sleep(duration);
         }
 
