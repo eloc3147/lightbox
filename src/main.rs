@@ -1,168 +1,210 @@
 mod cmap;
+mod led;
 
 use cmap::COLORMAP;
-use std::fs::File;
-use std::io::BufReader;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use led::{LEDConfig, LEDControler};
+
+use std::env;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use blinkt::Blinkt;
-
-use rodio::source::Buffered;
-use rodio::{Decoder, Device, Source};
-
 use cpal::traits::{DeviceTrait, HostTrait};
-use thread_priority::unix::{
-    set_thread_priority_and_policy, thread_native_id, RealtimeThreadSchedulePolicy,
-    ThreadSchedulePolicy,
+use rodio::{buffer::SamplesBuffer, Device, OutputStream};
+
+use std::collections::HashMap;
+use std::fs;
+use std::io;
+
+use anyhow::{anyhow, Context, Result};
+use figment::{
+    providers::{Format, Toml},
+    Figment,
 };
-use thread_priority::ThreadPriority;
+use serde::Deserialize;
 
-use average::Mean;
+use librespot::{
+    audio::AudioPacket,
+    core::{
+        authentication::Credentials, cache::Cache, config::SessionConfig, session::Session,
+        spotify_id::SpotifyId,
+    },
+    playback::{audio_backend, config::PlayerConfig, player::Player},
+};
 
-const LED_COUNT: usize = 144;
-const LIGHT_BUF_LEN: usize = 256;
-const LIGHT_AVG_DURATION: f32 = 0.25;
-const LIGHT_SAMPLE_RATE: usize = 30;
-const VOLUME_MUL: f32 = 1.0 / 10000.0;
+const DATA_DIR: &str = "/etc/lightbox/";
+const SPOTIFY_SAMPLE_RATE: u32 = 44100;
 
-const LIGHT_AVG_COUNT: usize = (LIGHT_AVG_DURATION * LIGHT_SAMPLE_RATE as f32) as usize;
-
-fn light_loop(
-    source: Buffered<Decoder<BufReader<File>>>,
-    exit: Arc<AtomicBool>,
-    time_rx: mpsc::Receiver<Instant>,
-) {
-    let sample_rate = dbg!(source.sample_rate());
-    let led_sample_rate = dbg!(sample_rate / LIGHT_SAMPLE_RATE as u32);
-    let mut sample_buf = [0f32; LIGHT_BUF_LEN];
-    let mut averaging_buf = [0f64; LIGHT_BUF_LEN / 2 * LIGHT_AVG_COUNT];
-    let mut avg_index = 0usize;
-
-    set_thread_priority_and_policy(
-        thread_native_id(),
-        ThreadPriority::Max,
-        ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::RoundRobin),
-    )
-    .unwrap();
-
-    let mut blinkt = Blinkt::with_spi(16_000_000, LED_COUNT).unwrap();
-    blinkt.set_all_pixels_brightness(1.0);
-
-    let start_time = time_rx.recv().unwrap();
-
-    let mut sample_count = 0u128;
-    for sample in source {
-        if exit.load(Ordering::Relaxed) {
-            break;
-        }
-
-        let sample_index = (sample_count % led_sample_rate as u128) as usize;
-
-        if sample_index < LIGHT_BUF_LEN {
-            sample_buf[sample_index] = sample as f32;
-        }
-
-        if sample_index == LIGHT_BUF_LEN - 1 {
-            let spectrum = microfft::real::rfft_256(&mut sample_buf);
-
-            for (i, sample) in spectrum.iter().enumerate() {
-                let bin_index = i * LIGHT_AVG_COUNT;
-                averaging_buf[bin_index + (avg_index % LIGHT_AVG_COUNT)] =
-                    (sample.log(10.0).norm() / 10.0) as f64;
-                let mut value = averaging_buf[(bin_index)..(bin_index + LIGHT_AVG_COUNT)]
-                    .iter()
-                    .collect::<Mean>()
-                    .mean();
-
-                if value > 1.0 {
-                    value = 1.0;
-                }
-                let color = COLORMAP[(value * (COLORMAP.len() - 1) as f64) as usize];
-
-                blinkt.set_pixel_rgbb(
-                    i + 8,
-                    color[0],
-                    color[1],
-                    color[2],
-                    (0.5 + value / 2.0) as f32,
-                );
-
-                avg_index = avg_index.wrapping_add(1);
-            }
-            blinkt.show().unwrap();
-        }
-
-        if let Some(duration) =
-            Duration::from_micros((sample_count * 1000000 / sample_rate as u128) as u64)
-                .checked_sub(start_time.elapsed())
-        {
-            thread::sleep(duration);
-        }
-
-        sample_count += 1;
-    }
-
-    blinkt.set_all_pixels_brightness(0.0);
+#[derive(Deserialize)]
+struct AppConfig {
+    pub spotify_username: String,
+    pub spotify_password: String,
+    pub audio_device: Option<String>,
 }
 
-fn main() {
-    // Setup Ctrl-C handling
-    let exit = Arc::new(AtomicBool::new(false));
-    let e = exit.clone();
-    ctrlc::set_handler(move || {
-        e.store(true, Ordering::Relaxed);
-    })
-    .expect("Error setting Ctrl-C handler");
+impl AppConfig {
+    fn load(path: &Path) -> Result<AppConfig> {
+        Figment::new()
+            .merge(Toml::file(path))
+            .extract()
+            .context("Erro loading config file")
+    }
+}
 
-    // Find output device
+fn select_device(device_name: Option<String>) -> Result<Option<Device>> {
     let host = cpal::default_host();
-    let devices: Vec<_> = host.devices().unwrap().map(Box::new).collect();
-    println!("Available hosts:");
-    for device in devices.iter() {
-        println!("\t{}", device.name().unwrap());
+    let devices: Vec<_> = host
+        .devices()
+        .with_context(|| "Error listing devices")?
+        .map(Box::new)
+        .collect();
+
+    if let Some(target_name) = &device_name {
+        for device in devices {
+            let name = device.name().unwrap_or_else(|_| "".to_owned());
+            if name.contains(target_name.as_str()) {
+                println!("Selected device: {}", name);
+                return Ok(Some(Device::from(*device)));
+            }
+        }
+        println!("No device named {} found.", target_name);
+    } else {
+        println!("Available devices:");
+        for device in devices.iter() {
+            let name = device.name().context("Error getting device name")?;
+            print!("'{}' configs: [", name);
+
+            match device.supported_output_configs() {
+                Ok(configs) => {
+                    println!("");
+                    for config in configs {
+                        if config.channels() > 5 {
+                            println!("  ...");
+                            break;
+                        }
+                        println!(
+                            "  {{nchans: {}, s_rate: {}-{}, sample_type: {:?}}},",
+                            config.channels(),
+                            config.min_sample_rate().0,
+                            config.max_sample_rate().0,
+                            config.sample_format()
+                        );
+                    }
+                    println!("]");
+                }
+                Err(_) => println!(" Could not retrieve configs ]"),
+            }
+        }
     }
 
-    let device = match devices
-        .into_iter()
-        .filter(|d| d.name().unwrap().starts_with("plughw"))
-        .next()
-    {
-        Some(d) => {
-            println!("Selected device: {}", d.name().unwrap());
-            Device::from(*d)
+    Ok(None)
+}
+
+struct Distributer {
+    output_dev: rodio::Sink,
+    led_controller: LEDControler,
+}
+
+impl Distributer {
+    fn new(output_dev: rodio::Sink, led_controller: LEDControler) -> Self {
+        Distributer {
+            output_dev,
+            led_controller,
         }
-        None => {
-            println!("Device not found");
-            return;
+    }
+}
+
+impl audio_backend::Sink for Distributer {
+    fn start(&mut self) -> io::Result<()> {
+        println!("Starting playback");
+        Ok(())
+    }
+
+    fn stop(&mut self) -> io::Result<()> {
+        println!("Stopping playback");
+        Ok(())
+    }
+
+    fn write(&mut self, data: &AudioPacket) -> io::Result<()> {
+        println!("Got {} bytes of data", data.samples().len());
+        let source = SamplesBuffer::new(2, SPOTIFY_SAMPLE_RATE, data.samples());
+        println!("Feeding audio");
+        self.output_dev.append(source);
+        println!("Feeding LEDs");
+        self.led_controller.feed_samples(data.samples());
+
+        // Chunk sizes seem to be about 256 to 3000 ish items long.
+        // Assuming they're on average 1628 then a half second buffer is:
+        // 44100 elements --> about 27 chunks
+        while self.output_dev.len() > 26 {
+            // sleep and wait for rodio to drain a bit
+            print!("{},", self.output_dev.len());
+            thread::sleep(Duration::from_millis(10));
         }
+        println!("Done sleep");
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        println!("Error running lightrbox: {:?}", e);
+    }
+}
+
+async fn run() -> Result<()> {
+    let led_config = LEDConfig {
+        led_count: 144,
+        average_count: 1,
+        color_map: &COLORMAP,
     };
 
-    // Stream wav
-    let (_stream, stream_handle) = rodio::OutputStream::try_from_device(&device).unwrap();
-    let sink = rodio::Sink::try_new(&stream_handle).unwrap();
+    let args: Vec<_> = env::args().collect();
+    if args.len() != 2 {
+        println!("Usage: {} TRACK", args[0]);
+        return Ok(());
+    }
+    let data_dir = PathBuf::from(DATA_DIR);
+    fs::create_dir_all(&data_dir).context("Error creating config directory")?;
 
-    let file = File::open("sample.wav").unwrap();
-    let source = rodio::Decoder::new(BufReader::new(file))
-        .unwrap()
-        .buffered();
+    let config = AppConfig::load(&data_dir.join("config.toml"))?;
+    let credentials = Credentials::with_password(config.spotify_username, config.spotify_password);
 
-    // Start LED control
-    let (time_tx, time_rx) = mpsc::sync_channel(0);
-    let buf = source.clone();
-    let e = exit.clone();
-    println!("Starting light loop");
-    let led_thread = thread::spawn(move || {
-        light_loop(buf, e, time_rx);
+    let track = SpotifyId::from_base62(&args[1]).expect("Unable to decode spotify track ID");
+
+    // Spotify connect
+    println!("Connecting ..");
+    let session_config = SessionConfig::default();
+    let player_config = PlayerConfig::default();
+    let cache = Cache::new(
+        Some(&data_dir.join("info_cache")),
+        Some(&data_dir.join("audio_cache")),
+    )
+    .context("Error creating spotify cache")?;
+    let session = Session::connect(session_config, credentials, Some(cache)).await?;
+
+    // Open output stream
+    let device = match select_device(config.audio_device)? {
+        Some(d) => d,
+        None => {
+            println!("No device selected. Exiting");
+            return Ok(());
+        }
+    };
+    let (_stream, stream_handle) =
+        OutputStream::try_from_device(&device).context("Error opening output stream")?;
+    let sink = rodio::Sink::try_new(&stream_handle).context("Error opening output sink")?;
+
+    let (mut player, _) = Player::new(player_config, session.clone(), None, move || {
+        Box::new(Distributer::new(sink, LEDControler::new(led_config)))
     });
 
-    // Play audio
-    sink.append(source);
-    sink.play();
-    time_tx.send(Instant::now()).unwrap();
+    player.load(track, true, 0);
 
-    led_thread.join().unwrap();
-    println!("Exiting");
+    println!("Playing...");
+    player.await_end_of_track().await;
+
+    println!("Done");
+    Ok(())
 }

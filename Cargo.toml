@@ -5,25 +5,28 @@ authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-# bluez = "0.1.3"
-# async-std = {version = "1.6.2", features = ["unstable"]}
-# async-ctrlc = "1.2.0"
-
-blinkt = "0.5"
+anyhow = "1.0"
 ctrlc = "3.1.7"
-rodio = { version = "0.12", default-features = false, features = ["wav"]}
-cpal = "0.12"
-microfft = { version = "0.3.0", default-features = false, features = ["maxn-256"]}
-average = "0.10"
 thread-priority = "0.2.0"
-num-complex = "0.2.4"
+env_logger = "0.8.3"
+figment = { version = "0.10", features = ["toml"] }
+const_format = "0.2"
+serde = { version = "1.0", features = ["derive"] }
 
-# Waiting on https://github.com/RustAudio/cpal/issues/473
-[patch.crates-io]
-rodio = {git = "https://github.com/RustAudio/rodio"}
-cpal = {git = "https://github.com/RustAudio/cpal"}
+# LED
+blinkt = "0.5"
+microfft = { version = "0.4", default-features = false, features = ["maxn-256"]}
+average = "0.11"
+num-complex = "0.4"
+tokio = "1.5"
+
+# Spotify
+librespot = { git = "https://github.com/librespot-org/librespot" }
+
+rodio = { version = "0.13", default-features = false}
+cpal = "0.13"
 
 [profile.dev]
 opt-level = 3
-codegen-units = 1
-lto = true
+# codegen-units = 1
+# lto = true
