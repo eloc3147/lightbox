@@ -741,9 +741,9 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hyper"
-version = "0.14.6"
+version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f006b8784cfb01fe7aa9c46f5f5cd4cf5c85a8c612a0653ec97642979062665"
+checksum = "1e5f105c494081baa3bf9e200b279e27ec1623895cd504c7dbef8d0b080fcf54"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -928,7 +928,7 @@ dependencies = [
 [[package]]
 name = "librespot"
 version = "0.1.6"
-source = "git+https://github.com/librespot-org/librespot#4925adb4f103cea20f38eee1db9f09b0d3e07e75"
+source = "git+https://github.com/librespot-org/librespot#1ff7c43e7b219fa2f0d2c0c2b0aff71f5f967109"
 dependencies = [
  "base64",
  "env_logger",
@@ -952,7 +952,7 @@ dependencies = [
 [[package]]
 name = "librespot-audio"
 version = "0.1.6"
-source = "git+https://github.com/librespot-org/librespot#4925adb4f103cea20f38eee1db9f09b0d3e07e75"
+source = "git+https://github.com/librespot-org/librespot#1ff7c43e7b219fa2f0d2c0c2b0aff71f5f967109"
 dependencies = [
  "aes-ctr",
  "byteorder",
@@ -971,7 +971,7 @@ dependencies = [
 [[package]]
 name = "librespot-connect"
 version = "0.1.6"
-source = "git+https://github.com/librespot-org/librespot#4925adb4f103cea20f38eee1db9f09b0d3e07e75"
+source = "git+https://github.com/librespot-org/librespot#1ff7c43e7b219fa2f0d2c0c2b0aff71f5f967109"
 dependencies = [
  "aes-ctr",
  "base64",
@@ -999,7 +999,7 @@ dependencies = [
 [[package]]
 name = "librespot-core"
 version = "0.1.6"
-source = "git+https://github.com/librespot-org/librespot#4925adb4f103cea20f38eee1db9f09b0d3e07e75"
+source = "git+https://github.com/librespot-org/librespot#1ff7c43e7b219fa2f0d2c0c2b0aff71f5f967109"
 dependencies = [
  "aes",
  "base64",
@@ -1038,7 +1038,7 @@ dependencies = [
 [[package]]
 name = "librespot-metadata"
 version = "0.1.6"
-source = "git+https://github.com/librespot-org/librespot#4925adb4f103cea20f38eee1db9f09b0d3e07e75"
+source = "git+https://github.com/librespot-org/librespot#1ff7c43e7b219fa2f0d2c0c2b0aff71f5f967109"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1051,7 +1051,7 @@ dependencies = [
 [[package]]
 name = "librespot-playback"
 version = "0.1.6"
-source = "git+https://github.com/librespot-org/librespot#4925adb4f103cea20f38eee1db9f09b0d3e07e75"
+source = "git+https://github.com/librespot-org/librespot#1ff7c43e7b219fa2f0d2c0c2b0aff71f5f967109"
 dependencies = [
  "byteorder",
  "cpal",
@@ -1071,7 +1071,7 @@ dependencies = [
 [[package]]
 name = "librespot-protocol"
 version = "0.1.6"
-source = "git+https://github.com/librespot-org/librespot#4925adb4f103cea20f38eee1db9f09b0d3e07e75"
+source = "git+https://github.com/librespot-org/librespot#1ff7c43e7b219fa2f0d2c0c2b0aff71f5f967109"
 dependencies = [
  "glob",
  "protobuf",
@@ -1616,9 +1616,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.4.5"
+version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "957056ecddbeba1b26965114e191d2e8589ce74db242b6ea25fc4062427a5c19"
+checksum = "2a26af418b574bd56588335b3a3659a65725d4e636eb1016c2f9e3b38c7cc759"
 dependencies = [
  "aho-corasick",
  "memchr",

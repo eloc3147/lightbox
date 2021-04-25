@@ -1,22 +1,17 @@
-mod cmap;
 mod led;
-
-use cmap::COLORMAP;
-use led::{LEDConfig, LEDControler};
 
 use std::env;
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{buffer::SamplesBuffer, Device, OutputStream};
 
-use std::collections::HashMap;
 use std::fs;
 use std::io;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use figment::{
     providers::{Format, Toml},
     Figment,
@@ -31,6 +26,10 @@ use librespot::{
     },
     playback::{audio_backend, config::PlayerConfig, player::Player},
 };
+
+use lightbox::cmap::COLORMAP;
+
+use led::{LEDConfig, LEDControler};
 
 const DATA_DIR: &str = "/etc/lightbox/";
 const SPOTIFY_SAMPLE_RATE: u32 = 44100;
@@ -126,11 +125,8 @@ impl audio_backend::Sink for Distributer {
     }
 
     fn write(&mut self, data: &AudioPacket) -> io::Result<()> {
-        println!("Got {} bytes of data", data.samples().len());
         let source = SamplesBuffer::new(2, SPOTIFY_SAMPLE_RATE, data.samples());
-        println!("Feeding audio");
         self.output_dev.append(source);
-        println!("Feeding LEDs");
         self.led_controller.feed_samples(data.samples());
 
         // Chunk sizes seem to be about 256 to 3000 ish items long.
