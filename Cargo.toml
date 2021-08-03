@@ -9,7 +9,7 @@ resolver = "2"
 anyhow = "1.0"
 ctrlc = "3.1.7"
 thread-priority = "0.2.0"
-env_logger = "0.8.3"
+env_logger = "0.9"
 figment = { version = "0.10", features = ["toml"] }
 const_format = "0.2"
 serde = { version = "1.0", features = ["derive"] }
@@ -17,17 +17,17 @@ serde = { version = "1.0", features = ["derive"] }
 # LED
 microfft = { version = "0.4", default-features = false, features = ["maxn-2048"]}
 apodize = "1.0.0"
-average = "0.11"
+average = "0.13"
 num-complex = "0.4"
 tokio = "1.5"
 
 # Spotify
 librespot = { git = "https://github.com/librespot-org/librespot" }
-rodio = { version = "0.13", default-features = false}
+rodio = { version = "0.14", default-features = false}
 cpal = "0.13"
 
 [target.'cfg(unix)'.dependencies]
-blinkt = "0.5"
+blinkt = "0.6"
 
 [profile.dev]
 opt-level = 3
