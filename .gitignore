@@ -1,2 +1,4 @@
 /build
 *.wav
+*.pyd
+processing_test/build/

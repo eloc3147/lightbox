@@ -1,0 +1,12 @@
+[package]
+edition = "2018"
+name = "processing_test"
+version = "0.1.0"
+
+[lib]
+name = "processing_test"
+crate-type = ["cdylib"]
+
+[dependencies]
+lightbox = {path = "../"}
+pyo3 = {version = "0.14", features = ["extension-module"]}

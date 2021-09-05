@@ -41,7 +41,6 @@ impl Processor {
         }
 
         // TODO: Add nyquist filter
-        // TODO: Add windowing
 
         processed
     }

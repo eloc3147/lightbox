@@ -4,7 +4,7 @@ set -u
 
 # Config
 TIMEOUT=120
-SKIP_DIRS="-X *.git/ -X .vscode/ -X .cargo/ -X build/ -X render/"
+SKIP_DIRS="-X *.git/ -X .vscode/ -X processing_test/"
 
 SERVER=$LIGHTBOX_FTP_IP
 USER=$LIGHTBOX_FTP_USER

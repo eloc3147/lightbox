@@ -35,21 +35,16 @@ tokio = {version = "1.5", optional = true}
 [features]
 audio_io = ["cpal", "rodio"]
 config = ["figment", "serde"]
-default = []
+default = ["processing"]
 led = ["blinkt"]
 processing = ["apodize", "average", "microfft", "num-complex"]
 spotify = ["librespot", "tokio"]
 
 lightbox_client = ["audio_io", "config", "led", "processing", "spotify"]
-processing_test = ["processing"]
 
 [[bin]]
 name = "lightbox_client"
 required-features = ["lightbox_client"]
-
-[[bin]]
-name = "processing_test"
-required-features = ["processing_test"]
 
 [profile.dev]
 opt-level = 3
