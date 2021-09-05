@@ -145,7 +145,7 @@ impl audio_backend::Sink for Distributer {
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        println!("Error running lightrbox: {:?}", e);
+        println!("Fatal error: {:?}", e);
     }
 }
 
@@ -154,6 +154,7 @@ async fn run() -> Result<()> {
         led_count: 144,
         average_count: 1,
         color_map: &COLORMAP,
+        hamming_window: false,
     };
 
     let args: Vec<_> = env::args().collect();
@@ -169,22 +170,12 @@ async fn run() -> Result<()> {
 
     let track = SpotifyId::from_base62(&args[1]).expect("Unable to decode spotify track ID");
 
-    // Spotify connect
-    println!("Connecting ..");
-    let session_config = SessionConfig::default();
-    let player_config = PlayerConfig::default();
-    let cache = Cache::new(
-        Some(&data_dir.join("info_cache")),
-        Some(&data_dir.join("audio_cache")),
-    )
-    .context("Error creating spotify cache")?;
-    let session = Session::connect(session_config, credentials, Some(cache)).await?;
-
     // Open output stream
     let device = match select_device(config.audio_device)? {
         Some(d) => d,
         None => {
-            println!("No device selected. Exiting");
+            println!("No device selected.");
+            select_device(None)?;
             return Ok(());
         }
     };
@@ -192,6 +183,19 @@ async fn run() -> Result<()> {
         OutputStream::try_from_device(&device).context("Error opening output stream")?;
     let sink = rodio::Sink::try_new(&stream_handle).context("Error opening output sink")?;
 
+    // Spotify connect
+    println!("Connecting ..");
+    let session_config = SessionConfig::default();
+    let player_config = PlayerConfig::default();
+    let cache = Cache::new(
+        Some(&data_dir.join("info_cache")),
+        Some(&data_dir.join("audio_cache")),
+        None,
+    )
+    .context("Error creating spotify cache")?;
+    let session = Session::connect(session_config, credentials, Some(cache)).await?;
+
+    // Open Spotify player
     let (mut player, _) = Player::new(player_config, session.clone(), None, move || {
         Box::new(Distributer::new(sink, LEDControler::new(led_config)))
     });

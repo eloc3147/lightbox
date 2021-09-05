@@ -6,7 +6,7 @@ use average::Mean;
 use blinkt::Blinkt;
 use const_format::formatcp;
 
-use lightbox::processing::{process_samples, FFT_LENGTH};
+use lightbox::processing::{Processor, FFT_LENGTH};
 
 pub struct LEDConfig {
     /// Number of LEDs in the chain
@@ -17,10 +17,14 @@ pub struct LEDConfig {
     pub average_count: usize,
     /// Color mapping
     pub color_map: &'static [[u8; 3]; 256],
+
+    /// Whether to apply a Hamming window to the incoming samples
+    pub hamming_window: bool,
 }
 
 pub struct LEDControler {
     leds: Blinkt,
+    processor: Processor,
     sample_buf: Box<[f32]>,
     sample_index: usize,
     averaging_buf: Vec<f64>,
@@ -42,8 +46,14 @@ impl LEDControler {
         let fft_sample_f =
             BufWriter::new(File::create("fft_samples.bin").expect("Unable to create sample file"));
 
+        let processor = match config.hamming_window {
+            true => Processor::new_with_hamming(),
+            false => Processor::new_without_window(),
+        };
+
         LEDControler {
             leds,
+            processor,
             sample_buf: Box::new([0f32; FFT_LENGTH]),
             sample_index: 0,
             averaging_buf: vec![0f64; FFT_LENGTH / 2 * config.average_count],
@@ -62,7 +72,7 @@ impl LEDControler {
         // Also assuming sampels are fed at the correct speed
         // No speed limiting in LED loop
         for sample in samples.iter() {
-            self.sample_buf[self.sample_index] = sample;
+            self.sample_buf[self.sample_index] = *sample;
             if self.sample_index == FFT_LENGTH - 1 {
                 self.render_spectrum();
                 self.sample_index = 0;
@@ -86,23 +96,18 @@ impl LEDControler {
                 .write(&sample.to_be_bytes())
                 .expect("Unable to write sample");
         }
-        let spectrum = process_samples(samples);
+        let spectrum = self.processor.process(samples);
 
         // Samples are grouped by average, spaced out by bin index
         // eg: BIN1_AVG1, BIN1_AVG2, BIN1_AVG3, BIN2_AVG1 etc
-        for (bin_num, sample) in spectrum.iter().enumerate() {
+        for (bin_num, mut sample) in IntoIterator::into_iter(spectrum).enumerate() {
             self.fft_sample_f
-                .write(&sample.re.to_be_bytes())
-                .expect("Unable to write sample");
-            self.fft_sample_f
-                .write(&sample.im.to_be_bytes())
+                .write(&sample.to_be_bytes())
                 .expect("Unable to write sample");
             // Index to start of bin
             // let bin_index = bin_num * self.average_count;
 
-            // Convert to log scale
-            let mut value = ((*sample).log(10.0).norm() / 10.0) as f64;
-            // self.averaging_buf[bin_index + self.average_index] = value;
+            // self.averaging_buf[bin_index + self.average_index] = *sample;
 
             // Slice of averaging values of bin
             // let mut value = self.averaging_buf[bin_index..(bin_index + self.average_count)]
@@ -111,8 +116,8 @@ impl LEDControler {
             //     .mean();
 
             // Clamp value to <= 1
-            if value > 1.0 {
-                value = 1.0;
+            if sample > 1.0 {
+                sample = 1.0;
             }
             // let color = self.map_to_color(value);
 
@@ -121,7 +126,7 @@ impl LEDControler {
                 255, // color[0],
                 0,   // color[1],
                 0,   // color[2],
-                value as f32,
+                sample,
             );
         }
         self.leds.show().unwrap();
