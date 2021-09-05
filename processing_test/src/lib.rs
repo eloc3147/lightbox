@@ -1,9 +1,5 @@
-use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use std::convert::TryInto;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
-use std::path::Path;
 
 use lightbox::processing::{Processor, FFT_LENGTH, FFT_OUT_LENGTH};
 

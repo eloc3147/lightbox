@@ -1,6 +1,8 @@
 """Utility for building a local copy of the Rust extention."""
 
+import os
 import shutil
+import sys
 import subprocess  # noqa: S404
 from pathlib import Path
 
@@ -11,11 +13,14 @@ def main():
 
     # Build extention
     print("Building extention")
-    proc = subprocess.run(["cargo", "build", "--release"])  # noqa: S603, S607
+
+    # Unlcear why this is needed
+    modified_env = os.environ.copy()
+    modified_env["PYO3_PYTHON"] = sys.executable
+
+    proc = subprocess.run(["cargo", "build", "--release"], env=modified_env)  # noqa: S603, S607
     if proc.returncode != 0:
         print("Build failed")
-        print("If you're seeing linking errors, you probably don't have libftdi1 installed")
-        print("Check the build instructions, and failing that, contact Kinnon for assistance")
         return
 
     src_path = cwd / "build" / "release" / "processing_test.dll"
