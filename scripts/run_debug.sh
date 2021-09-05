@@ -2,20 +2,25 @@
 
 set -u
 
-./download_debug.sh
+BASE_DIR="$HOME/lightbox_debug"
+
+# Download
+$BASE_DIR/scripts/download_debug.sh
+DL_STATUS="$?"
 
 # Check status
-if [ $? -ne 0 ] ; then
+if [ $DL_STATUS -eq 1 ]
+then
   echo "Failed to download build"
   exit 1
 fi
 
+cd $BASE_DIR
+
 killall -q lightbox
-cd $HOME/lightbox/debug
-cargo clean -p lightbox
-if cargo build; then
+if cargo build --release --bin lightbox_client --features="lightbox_client"; then
     echo "Running"
-    sudo RUST_BACKTRACE=full target/debug/lightbox
+    sudo RUST_BACKTRACE=1 RUST_LOG=debug "$HOME/cargo_target/release/lightbox_client" "$@"
 else
     echo "Build failed"
 fi
