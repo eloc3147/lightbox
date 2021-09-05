@@ -1,33 +1,55 @@
 [package]
-name = "lightbox"
-version = "0.1.0"
 authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
 edition = "2018"
+name = "lightbox"
 resolver = "2"
+version = "0.1.1"
 
 [dependencies]
+# Core
 anyhow = "1.0"
-ctrlc = "3.1.7"
-thread-priority = "0.2.0"
-env_logger = "0.9"
-figment = { version = "0.10", features = ["toml"] }
 const_format = "0.2"
-serde = { version = "1.0", features = ["derive"] }
+ctrlc = "3.1.7"
+
+# Audio IO
+cpal = {version = "0.13", optional = true}
+rodio = {version = "0.14", default-features = false, optional = true}
+
+# Config
+figment = {version = "0.10", features = ["toml"], optional = true}
+serde = {version = "1.0", features = ["derive"], optional = true}
 
 # LED
-microfft = { version = "0.4", default-features = false, features = ["maxn-2048"]}
-apodize = "1.0.0"
-average = "0.13"
-num-complex = "0.4"
-tokio = "1.5"
+blinkt = {version = "0.6", optional = true}
+
+# Processing
+apodize = {version = "1.0.0", optional = true}
+average = {version = "0.13", optional = true}
+microfft = {version = "0.4", default-features = false, features = ["maxn-2048"], optional = true}
+num-complex = {version = "0.4", optional = true}
 
 # Spotify
-librespot = { git = "https://github.com/librespot-org/librespot" }
-rodio = { version = "0.14", default-features = false}
-cpal = "0.13"
+librespot = {version = "0.2.0", optional = true}
+tokio = {version = "1.5", optional = true}
 
-[target.'cfg(unix)'.dependencies]
-blinkt = "0.6"
+[features]
+audio_io = ["cpal", "rodio"]
+config = ["figment", "serde"]
+default = []
+led = ["blinkt"]
+processing = ["apodize", "average", "microfft", "num-complex"]
+spotify = ["librespot", "tokio"]
+
+lightbox_client = ["audio_io", "config", "led", "processing", "spotify"]
+processing_test = ["processing"]
+
+[[bin]]
+name = "lightbox_client"
+required-features = ["lightbox_client"]
+
+[[bin]]
+name = "processing_test"
+required-features = ["processing_test"]
 
 [profile.dev]
 opt-level = 3
