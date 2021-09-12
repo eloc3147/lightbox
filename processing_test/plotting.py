@@ -89,34 +89,41 @@ def plot_chunk(
     plot_path: Optional[Path] = None,
     wavform_ylim: Optional[tuple[float, float]] = None,
     fft_ylim: Optional[tuple[float, float]] = None,
+    include_np: bool = True,
 ) -> None:
     fig = plt.figure(constrained_layout=True, figsize=(16, 9))
-    gs = gridspec.GridSpec(3, 1, figure=fig)
+    
+    if include_np:
+        num_rows = 3
+    else:
+        num_rows = 2
+
+    gs = gridspec.GridSpec(num_rows, 1, figure=fig)
 
     ax1 = fig.add_subplot(gs[0, 0])
     draw_waveform(sample_idex, raw_samples, ax1, ylim=wavform_ylim)
 
-    db_power = 10 * np.log10(fft_samples)
     ax2 = fig.add_subplot(gs[1, 0])
-    ax2.plot(FREQS, db_power, color="C2")
+    ax2.plot(FREQS, fft_samples, color="C2")
     ax2.set_ylabel("Power (dB)")
     ax2.set_title("Implementation FFT")
 
-    np_freqs, np_ampls = process_np(raw_samples)
-    db_power = 10 * np.log10(np_ampls)
+    if include_np:
+        np_freqs, np_ampls = process_np(raw_samples)
+        db_power = 10 * np.log10(np_ampls)
 
-    ax3 = fig.add_subplot(gs[2, 0])
-    ax3.plot(np_freqs, db_power, color="C3")
-    ax3.set_ylabel("Power (dB)")
-    ax3.set_title("Numpy FFT")
-    if fft_ylim:
-        ax2.set_ylim(fft_ylim)
+        ax3 = fig.add_subplot(gs[2, 0])
+        ax3.plot(np_freqs, db_power, color="C3")
+        ax3.set_ylabel("Power (dB)")
+        ax3.set_title("Numpy FFT")
+        if fft_ylim:
+            ax2.set_ylim(fft_ylim)
 
-    if plot_path:
-        plt.savefig(str(plot_path), dpi=120)
-        plt.close(fig)
-    else:
-        plt.show()
+        if plot_path:
+            plt.savefig(str(plot_path), dpi=120)
+            plt.close(fig)
+        else:
+            plt.show()
 
 
 def load_wav(sample_file: Union[Path, str], channel: Union[Literal["left"], Literal["right"]]) -> np.ndarray:
