@@ -4,9 +4,10 @@ name = "processing_test"
 version = "0.1.0"
 
 [lib]
-name = "processing_test"
 crate-type = ["cdylib"]
+name = "processing_test"
 
 [dependencies]
 lightbox = {path = "../"}
+plotters = "^0.3.1"
 pyo3 = {version = "0.14", features = ["extension-module"]}

@@ -1,4 +1,8 @@
 /build
+processing_test/build/
+processing_test/render/
+
 *.wav
 *.pyd
-processing_test/build/
+*.mp4
+*.png

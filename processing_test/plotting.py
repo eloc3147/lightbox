@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Any, Optional
 import argparse
 import wave
+from multiprocessing.pool import ThreadPool
+from queue import Queue
+from threading import Thread
 
-FFT_EXEC = Path.cwd() / "build" / "release" / "processing_test.exe"
-
-import subprocess
 from pathlib import Path
 
 from matplotlib import pyplot as plt
@@ -15,18 +15,24 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 from tqdm import trange
 
+from processing_test import ProcessorInterface
+
 # Input constants
 NUM_BYTES = 4         # Number of bytes per sample (currently f32)
 FFT_SIZE = 2048        # Number of samples in FFT
 SAMPLE_RATE = 44_100  # Audio sample rate, in Hz
 
-DTYPE = ">f4"
+DPI = 150
+ASPECT_RATIO = (16, 9)
 
 # Calculated constants
 FFT_OUT_SIZE = FFT_SIZE // 2
 SAMPLE_TIME = 1 / SAMPLE_RATE
 CHUNK_TIME = SAMPLE_TIME * FFT_SIZE
-FREQS = SAMPLE_RATE * np.arange((FFT_SIZE / 2), dtype=DTYPE) / FFT_SIZE
+FREQS = SAMPLE_RATE * np.arange((FFT_SIZE / 2), dtype=np.float32) / FFT_SIZE
+
+PLOT_WDITH = DPI * ASPECT_RATIO[0]
+PLOT_HEIGHT = DPI * ASPECT_RATIO[1]
 
 
 def draw_waveform(sample_idex: int, samples: np.ndarray, axis: Any, ylim: Optional[tuple[float, float]] = None) -> None:
@@ -113,36 +119,39 @@ def plot_chunk(
         plt.show()
 
 
-def process_samples(raw_samples: np.ndarray) -> np.ndarray:
-    print("Processing {0} samples.".format(len(raw_samples)))
-    raw_samples.tofile("in.tmp")
-
-    result = subprocess.run([str(FFT_EXEC)], capture_output=True)
-    if result.returncode != 0:
-        print("Sample processing crashed")
-        print("Process STDOUT: {0}".format(result.stdout.decode()))
-        print("Process STDERR: {0}".format(result.stderr.decode()))
-        raise Exception()
-
-    return np.fromfile("out.tmp", dtype=DTYPE)
-
-
 def process_np(raw_samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     fourier = np.fft.fft(raw_samples)
     freqs = np.fft.fftfreq(len(raw_samples)) * len(raw_samples) * SAMPLE_RATE
     return (np.fft.fftshift(freqs)[FFT_OUT_SIZE:], np.abs(np.fft.fftshift(fourier))[FFT_OUT_SIZE:])
 
+def render_chunk(interface: ProcessorInterface, render_dir: Path, samples: np.ndarray, chunk_index: int, status_queue: Queue):
+    sample_index = chunk_index * FFT_SIZE
+    processed_chunk = interface.process_chunks(samples)
 
-def process_chunk(
-    raw_samples: np.ndarray,
-    sample_index: int,
-    plot_path: Optional[Path] = None,
-    wavform_ylim: Optional[tuple[float, float]] = None,
-    fft_ylim: Optional[tuple[float, float]] = None,
-) -> None:
-    fft_samples = process_samples(raw_samples)
+    np_freqs, np_samples = process_np(samples)
 
-    plot_chunk(sample_index, raw_samples, fft_samples, plot_path=plot_path, wavform_ylim=wavform_ylim, fft_ylim=fft_ylim)
+    interface.render_chunk(
+        samples,
+        SAMPLE_TIME,
+        processed_chunk,
+        FREQS,
+        np_samples,
+        np_freqs,
+        str(render_dir / "chunk_{0:04d}.png".format(chunk_index)),
+        PLOT_WDITH,
+        PLOT_HEIGHT,
+    )
+    status_queue.put(True)
+
+
+def render_thread(interface: ProcessorInterface, render_dir: Path, samples: np.ndarray, status_queue: Queue):
+    pool = ThreadPool(16)
+
+    pool.map(
+        lambda idx: render_chunk(interface, render_dir, samples[(idx * FFT_SIZE):(idx * FFT_SIZE) + FFT_SIZE], idx, status_queue),
+        range(len(samples) // FFT_SIZE),
+        chunksize=128,
+    )
 
 
 def main() -> None:
@@ -152,7 +161,7 @@ def main() -> None:
     args = parser.parse_args()
 
     audio_file = Path(args.input).resolve()
-    
+
     wav = wave.open(str(audio_file), mode="rb")
 
     (nchannels, sampwidth, framerate, nframes, comptype, compname) = wav.getparams()
@@ -173,9 +182,9 @@ def main() -> None:
 
     dt = np.dtype(np.int16)
     dt = dt.newbyteorder("L")
-    
+
     # Left channel only
-    samples = np.frombuffer(frames, dtype=dt).reshape((nframes, 2))[:, 0].astype(DTYPE) / ((2 ** 16) / 2)
+    samples = np.frombuffer(frames, dtype=dt).reshape((nframes, 2))[:, 0].astype(np.float32) / ((2 ** 16) / 2)
 
     print("Number of chunks: {0}".format(len(samples) / FFT_SIZE))
 
@@ -185,17 +194,14 @@ def main() -> None:
     wav_min = np.min(samples) * 1.1
     wav_max = np.max(samples) * 1.1
 
-    for chunk in trange(len(samples) // FFT_SIZE):
-        sample_index = chunk * FFT_SIZE
+    interface = ProcessorInterface(window=False)
 
-        process_chunk(
-            samples[sample_index:sample_index + FFT_SIZE],
-            sample_index,
-            plot_path=render_dir / "chunk_{0:04d}.png".format(chunk),
-            wavform_ylim=(wav_min, wav_max),
-            fft_ylim=(-80, 30),
-        )
-
+    status_queue = Queue()
+    thread = Thread(target=render_thread, args=(interface, render_dir, samples, status_queue), daemon=True)
+    thread.start()
+    
+    for _ in trange(len(samples) // FFT_SIZE):
+        status_queue.get()
 
 
 if __name__ == "__main__":
