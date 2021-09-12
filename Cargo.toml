@@ -25,7 +25,7 @@ blinkt = {version = "0.6", optional = true}
 # Processing
 apodize = {version = "1.0.0", optional = true}
 average = {version = "0.13", optional = true}
-microfft = {version = "0.4", default-features = false, features = ["maxn-2048"], optional = true}
+microfft = {version = "0.4", default-features = false, features = ["maxn-1024"], optional = true}
 num-complex = {version = "0.4", optional = true}
 
 # Spotify

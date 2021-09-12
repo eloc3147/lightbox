@@ -1,7 +1,7 @@
 use apodize;
-use microfft::real::rfft_2048;
+use microfft::real::rfft_1024;
 
-pub const FFT_LENGTH: usize = 2048;
+pub const FFT_LENGTH: usize = 1024;
 pub const FFT_OUT_LENGTH: usize = FFT_LENGTH / 2;
 
 pub struct Processor {
@@ -30,7 +30,7 @@ impl Processor {
             }
         }
 
-        let spectrum = rfft_2048(samples);
+        let spectrum = rfft_1024(samples);
         // since the real-valued coefficient at the Nyquist frequency is packed into the
         // imaginary part of the DC bin, it must be cleared before computing the amplitudes
         spectrum[0].im = 0.0;

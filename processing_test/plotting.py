@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional, Union
 import argparse
 import wave
 from multiprocessing.pool import ThreadPool
@@ -19,7 +19,7 @@ from processing_test import ProcessorInterface
 
 # Input constants
 NUM_BYTES = 4         # Number of bytes per sample (currently f32)
-FFT_SIZE = 2048        # Number of samples in FFT
+FFT_SIZE = 1024        # Number of samples in FFT
 SAMPLE_RATE = 44_100  # Audio sample rate, in Hz
 
 DPI = 150
@@ -29,7 +29,7 @@ ASPECT_RATIO = (16, 9)
 FFT_OUT_SIZE = FFT_SIZE // 2
 SAMPLE_TIME = 1 / SAMPLE_RATE
 CHUNK_TIME = SAMPLE_TIME * FFT_SIZE
-FREQS = SAMPLE_RATE * np.arange((FFT_SIZE / 2), dtype=np.float32) / FFT_SIZE
+FREQS = SAMPLE_RATE * np.arange(FFT_OUT_SIZE, dtype=np.float32) / FFT_SIZE
 
 PLOT_WDITH = DPI * ASPECT_RATIO[0]
 PLOT_HEIGHT = DPI * ASPECT_RATIO[1]
@@ -105,10 +105,10 @@ def plot_chunk(
     np_freqs, np_ampls = process_np(raw_samples)
     db_power = 10 * np.log10(np_ampls)
 
-    ax2 = fig.add_subplot(gs[2, 0])
-    ax2.plot(np_freqs, db_power, color="C3")
-    ax2.set_ylabel("Power (dB)")
-    ax2.set_title("Numpy FFT")
+    ax3 = fig.add_subplot(gs[2, 0])
+    ax3.plot(np_freqs, db_power, color="C3")
+    ax3.set_ylabel("Power (dB)")
+    ax3.set_title("Numpy FFT")
     if fft_ylim:
         ax2.set_ylim(fft_ylim)
 
@@ -119,10 +119,53 @@ def plot_chunk(
         plt.show()
 
 
+def load_wav(sample_file: Union[Path, str], channel: Union[Literal["left"], Literal["right"]]) -> np.ndarray:
+    """Load audio samples from a wav file and return one audio channel.
+
+    Args:
+        sample_file (Union[Path, str]): path to the wav file
+        channel (Union[Literal["left"], Literal["right"]]): the channel to use
+
+    Returns:
+        np.ndarray: the samples
+    """
+    if isinstance(sample_file, Path):
+        sample_file = str(sample_file)
+    
+    wav = wave.open(sample_file, mode="rb")
+
+    (nchannels, sampwidth, framerate, nframes, comptype, compname) = wav.getparams()
+    print(
+        "Wav params: {{\n\tnchannels: {},\n\tsampwidth: {},\n\tframerate: {},\n\tnframes: {},\n\tcomptype: {},\n\tcompname: {},\n}}".format(
+            nchannels,
+            sampwidth,
+            framerate,
+            nframes,
+            comptype,
+            compname,
+        ),
+    )
+
+    frames = wav.readframes(nframes)
+    print("Read {0} bytes. {1} bytes per frame".format(len(frames), len(frames) // nframes))
+
+    dt = np.dtype(np.int16)
+    dt = dt.newbyteorder("L")
+
+    # Left channel only
+    if channel == "left":
+        channel_idx = 0
+    else:
+        channel_idx = 1
+
+    return np.frombuffer(frames, dtype=dt).reshape((nframes, 2))[:, channel_idx].astype(np.float32) / ((2 ** 16) / 2)
+
+
 def process_np(raw_samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     fourier = np.fft.fft(raw_samples)
     freqs = np.fft.fftfreq(len(raw_samples)) * len(raw_samples) * SAMPLE_RATE
     return (np.fft.fftshift(freqs)[FFT_OUT_SIZE:], np.abs(np.fft.fftshift(fourier))[FFT_OUT_SIZE:])
+
 
 def render_chunk(interface: ProcessorInterface, render_dir: Path, samples: np.ndarray, chunk_index: int, status_queue: Queue):
     sample_index = chunk_index * FFT_SIZE
@@ -162,30 +205,8 @@ def main() -> None:
 
     audio_file = Path(args.input).resolve()
 
-    wav = wave.open(str(audio_file), mode="rb")
 
-    (nchannels, sampwidth, framerate, nframes, comptype, compname) = wav.getparams()
-
-    print(
-        "Params {{\n\tnchannels: {},\n\tsampwidth: {},\n\tframerate: {},\n\tnframes: {},\n\tcomptype: {},\n\tcompname: {},\n}}".format(
-            nchannels,
-            sampwidth,
-            framerate,
-            nframes,
-            comptype,
-            compname,
-        ),
-    )
-
-    frames = wav.readframes(nframes)
-    print("Read {0} bytes. {1} bytes per frame".format(len(frames), len(frames) // nframes))
-
-    dt = np.dtype(np.int16)
-    dt = dt.newbyteorder("L")
-
-    # Left channel only
-    samples = np.frombuffer(frames, dtype=dt).reshape((nframes, 2))[:, 0].astype(np.float32) / ((2 ** 16) / 2)
-
+    samples = load_wav(audio_file, "left")
     print("Number of chunks: {0}".format(len(samples) / FFT_SIZE))
 
     render_dir = Path.cwd() / "render"
