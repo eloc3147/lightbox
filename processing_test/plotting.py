@@ -15,21 +15,18 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 from tqdm import trange
 
-from processing_test import ProcessorInterface
+from processing_test import ProcessorInterface, FFT_LENGTH, FFT_OUT_LENGTH
 
 # Input constants
-NUM_BYTES = 4         # Number of bytes per sample (currently f32)
-FFT_SIZE = 1024        # Number of samples in FFT
 SAMPLE_RATE = 44_100  # Audio sample rate, in Hz
 
 DPI = 150
 ASPECT_RATIO = (16, 9)
 
 # Calculated constants
-FFT_OUT_SIZE = FFT_SIZE // 2
 SAMPLE_TIME = 1 / SAMPLE_RATE
-CHUNK_TIME = SAMPLE_TIME * FFT_SIZE
-FREQS = SAMPLE_RATE * np.arange(FFT_OUT_SIZE, dtype=np.float32) / FFT_SIZE
+CHUNK_TIME = SAMPLE_TIME * FFT_LENGTH
+FREQS = SAMPLE_RATE * np.arange(FFT_OUT_LENGTH, dtype=np.float32) / FFT_LENGTH
 
 PLOT_WDITH = DPI * ASPECT_RATIO[0]
 PLOT_HEIGHT = DPI * ASPECT_RATIO[1]
@@ -63,10 +60,10 @@ def plot_series(
     ax3 = fig.add_subplot(gs[1, 1])
     plt.colorbar(impl_fig, cax=ax3)
 
-    np_ampls = np.zeros((len(raw_samples) // FFT_SIZE, FFT_OUT_SIZE), dtype=np.float64)
+    np_ampls = np.zeros((len(raw_samples) // FFT_LENGTH, FFT_OUT_LENGTH), dtype=np.float64)
 
-    for idx in range(len(raw_samples) // FFT_SIZE):
-        np_ampls[idx] = process_np(raw_samples[idx * FFT_SIZE: (idx + 1) * FFT_SIZE])[1]
+    for idx in range(len(raw_samples) // FFT_LENGTH):
+        np_ampls[idx] = process_np(raw_samples[idx * FFT_LENGTH: (idx + 1) * FFT_LENGTH])[1]
 
     db_power = 10 * np.log10(np_ampls)
 
@@ -171,26 +168,28 @@ def load_wav(sample_file: Union[Path, str], channel: Union[Literal["left"], Lite
 def process_np(raw_samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     fourier = np.fft.fft(raw_samples)
     freqs = np.fft.fftfreq(len(raw_samples)) * len(raw_samples) * SAMPLE_RATE
-    return (np.fft.fftshift(freqs)[FFT_OUT_SIZE:], np.abs(np.fft.fftshift(fourier))[FFT_OUT_SIZE:])
+    return (np.fft.fftshift(freqs)[FFT_OUT_LENGTH:], np.abs(np.fft.fftshift(fourier))[FFT_OUT_LENGTH:] + 10e-10)
 
 
 def render_chunk(interface: ProcessorInterface, render_dir: Path, samples: np.ndarray, chunk_index: int, status_queue: Queue):
-    sample_index = chunk_index * FFT_SIZE
+    sample_index = chunk_index * FFT_LENGTH
     processed_chunk = interface.process_chunks(samples)
 
     np_freqs, np_samples = process_np(samples)
+    np_power = 10 * np.log10(np_samples)
 
     interface.render_chunk(
         samples,
         SAMPLE_TIME,
         processed_chunk,
         FREQS,
-        np_samples,
+        np_power,
         np_freqs,
         str(render_dir / "chunk_{0:04d}.png".format(chunk_index)),
         PLOT_WDITH,
         PLOT_HEIGHT,
     )
+
     status_queue.put(True)
 
 
@@ -198,8 +197,8 @@ def render_thread(interface: ProcessorInterface, render_dir: Path, samples: np.n
     pool = ThreadPool(16)
 
     pool.map(
-        lambda idx: render_chunk(interface, render_dir, samples[(idx * FFT_SIZE):(idx * FFT_SIZE) + FFT_SIZE], idx, status_queue),
-        range(len(samples) // FFT_SIZE),
+        lambda idx: render_chunk(interface, render_dir, samples[(idx * FFT_LENGTH):(idx * FFT_LENGTH) + FFT_LENGTH], idx, status_queue),
+        range(len(samples) // FFT_LENGTH),
         chunksize=128,
     )
 
@@ -211,16 +210,11 @@ def main() -> None:
     args = parser.parse_args()
 
     audio_file = Path(args.input).resolve()
-
-
     samples = load_wav(audio_file, "left")
-    print("Number of chunks: {0}".format(len(samples) / FFT_SIZE))
+    print("Number of chunks: {0}".format(len(samples) / FFT_LENGTH))
 
     render_dir = Path.cwd() / "render"
     render_dir.mkdir(parents=True, exist_ok=True)
-
-    wav_min = np.min(samples) * 1.1
-    wav_max = np.max(samples) * 1.1
 
     interface = ProcessorInterface(window=False)
 
@@ -228,7 +222,7 @@ def main() -> None:
     thread = Thread(target=render_thread, args=(interface, render_dir, samples, status_queue), daemon=True)
     thread.start()
     
-    for _ in trange(len(samples) // FFT_SIZE):
+    for _ in trange(len(samples) // FFT_LENGTH):
         status_queue.get()
 
 

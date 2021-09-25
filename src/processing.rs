@@ -23,26 +23,28 @@ impl Processor {
         }
     }
 
-    pub fn process(&self, samples: &mut [f32; FFT_LENGTH]) -> [f32; FFT_OUT_LENGTH] {
+    pub fn process(&self, input: &mut [f32; FFT_LENGTH], output: &mut [f32; FFT_OUT_LENGTH]) {
         if let Some(window) = &self.window {
-            for (i, sample) in samples.iter_mut().enumerate() {
+            for (i, sample) in input.iter_mut().enumerate() {
                 *sample *= window[i];
             }
         }
 
-        let spectrum = rfft_1024(samples);
+        let spectrum = rfft_1024(input);
+
         // since the real-valued coefficient at the Nyquist frequency is packed into the
         // imaginary part of the DC bin, it must be cleared before computing the amplitudes
         spectrum[0].im = 0.0;
 
-        let mut processed = [0f32; FFT_OUT_LENGTH];
         for (i, sample) in spectrum.iter().enumerate() {
-            processed[i] = sample.norm_sqr().sqrt();
+            // Add tiny value to prevent passing 0 to log10
+            let real = sample.norm_sqr().sqrt() + 1e-10;
+
+            // Convert to decibels
+            output[i] = 10.0 * real.log10();
         }
 
-        // TODO: Add nyquist filter
-
-        processed
+        // TODO: Add nyquist filter?
     }
 
     /// Get a reference to the window if one is in use

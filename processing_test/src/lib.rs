@@ -67,14 +67,14 @@ impl ProcessorInterface {
     fn process_chunks(&self, py: Python, mut samples: Vec<f32>) -> Vec<f32> {
         py.allow_threads(|| {
             let num_chunks = samples.len() / FFT_LENGTH;
-            let mut out_samples = Vec::with_capacity(num_chunks * FFT_OUT_LENGTH);
+            let mut out_samples = vec![0f32; num_chunks * FFT_OUT_LENGTH];
 
-            for chunk in samples.chunks_exact_mut(FFT_LENGTH) {
-                let processed =
-                    self.processor.process(chunk.try_into().expect(
-                        "chunks_exact gave non-exact slice. That's never supposed to happen",
-                    ));
-                out_samples.extend_from_slice(&processed);
+            for (input, output) in samples
+                .chunks_exact_mut(FFT_LENGTH)
+                .zip(out_samples.chunks_exact_mut(FFT_OUT_LENGTH))
+            {
+                self.processor
+                    .process(input.try_into().unwrap(), output.try_into().unwrap());
             }
 
             out_samples
@@ -119,7 +119,7 @@ impl ProcessorInterface {
             plot(
                 &areas[0],
                 (0..input_samples.len()).map(|s| s as f32 * sample_duration),
-                input_samples.clone(),
+                input_samples,
                 0.0,
                 max_x,
                 -1.2,
@@ -132,28 +132,52 @@ impl ProcessorInterface {
 
             let min_x = impl_freqs[0];
             let max_x = impl_freqs[impl_freqs.len() - 1];
+            let mut min_y = impl_samples[0];
+            let mut max_y = impl_samples[0];
+
+            for sample in &impl_samples[1..] {
+                if *sample < min_y {
+                    min_y = *sample;
+                } else if *sample > max_y {
+                    max_y = *sample;
+                }
+            }
+            let y_margin = (min_y - max_y).abs() * 0.05;
+
             plot(
                 &areas[1],
                 impl_freqs,
                 impl_samples,
                 min_x,
                 max_x,
-                -30.0,
-                100.0,
+                min_y + y_margin,
+                max_y + y_margin,
                 "Impl Spectrum",
             )
             .map_err(|e| PyException::new_err(format!("Error rendering impl plot: {:?}", e)))?;
 
             let min_x = np_freqs[0];
             let max_x = np_freqs[np_freqs.len() - 1];
+            let mut min_y = np_samples[0];
+            let mut max_y = np_samples[0];
+
+            for sample in &np_samples[1..] {
+                if *sample < min_y {
+                    min_y = *sample;
+                } else if *sample > max_y {
+                    max_y = *sample;
+                }
+            }
+            let y_margin = (min_y - max_y).abs() * 0.05;
+
             plot(
                 &areas[2],
                 np_freqs,
                 np_samples,
                 min_x,
                 max_x,
-                -30.0,
-                100.0,
+                min_y + y_margin,
+                max_y + y_margin,
                 "NP Spectrum",
             )
             .map_err(|e| PyException::new_err(format!("Error rendering np plot: {:?}", e)))?;
@@ -166,6 +190,8 @@ impl ProcessorInterface {
 
 #[pymodule]
 fn processing_test(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add("FFT_LENGTH", FFT_LENGTH)?;
+    m.add("FFT_OUT_LENGTH", FFT_OUT_LENGTH)?;
     m.add_class::<ProcessorInterface>()?;
 
     Ok(())

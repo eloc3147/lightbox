@@ -1,5 +1,8 @@
 from typing import Optional
 
+FFT_LENGTH: int
+FFT_OUT_LENGTH: int
+
 class ProcessorInterface(object):
     def __init__(self, window: bool) -> None: ...
 
