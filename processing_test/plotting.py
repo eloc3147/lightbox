@@ -7,6 +7,7 @@ import wave
 from multiprocessing.pool import ThreadPool
 from queue import Queue
 from threading import Thread
+import time
 
 from pathlib import Path
 
@@ -171,33 +172,53 @@ def process_np(raw_samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return (np.fft.fftshift(freqs)[FFT_OUT_LENGTH:], np.abs(np.fft.fftshift(fourier))[FFT_OUT_LENGTH:] + 10e-10)
 
 
-def render_chunk(interface: ProcessorInterface, render_dir: Path, samples: np.ndarray, chunk_index: int, status_queue: Queue):
-    sample_index = chunk_index * FFT_LENGTH
-    processed_chunk = interface.process_chunks(samples)
-
-    np_freqs, np_samples = process_np(samples)
-    np_power = 10 * np.log10(np_samples)
-
+def render_chunk(
+    interface: ProcessorInterface,
+    render_dir: Path,
+    samples: np.ndarray,
+    processed_samples: list[float],
+    chunk_index: int,
+    status_queue: Queue,
+    min_y: float,
+    max_y: float
+):
     interface.render_chunk(
         samples,
         SAMPLE_TIME,
-        processed_chunk,
+        processed_samples,
         FREQS,
-        np_power,
-        np_freqs,
         str(render_dir / "chunk_{0:04d}.png".format(chunk_index)),
         PLOT_WDITH,
         PLOT_HEIGHT,
+        min_y,
+        max_y,
     )
 
     status_queue.put(True)
 
 
-def render_thread(interface: ProcessorInterface, render_dir: Path, samples: np.ndarray, status_queue: Queue):
+def render_thread(
+    interface: ProcessorInterface,
+    render_dir: Path,
+    samples: np.ndarray,
+    processed_samples: list[float],
+    status_queue: Queue,
+    min_y: float,
+    max_y: float
+):
     pool = ThreadPool(16)
 
     pool.map(
-        lambda idx: render_chunk(interface, render_dir, samples[(idx * FFT_LENGTH):(idx * FFT_LENGTH) + FFT_LENGTH], idx, status_queue),
+        lambda idx: render_chunk(
+            interface,
+            render_dir,
+            samples[(idx * FFT_LENGTH):(idx * FFT_LENGTH) + FFT_LENGTH],
+            processed_samples[(idx * FFT_OUT_LENGTH):(idx * FFT_OUT_LENGTH) + FFT_OUT_LENGTH],
+            idx,
+            status_queue,
+            min_y,
+            max_y,
+        ),
         range(len(samples) // FFT_LENGTH),
         chunksize=128,
     )
@@ -218,8 +239,19 @@ def main() -> None:
 
     interface = ProcessorInterface(window=False)
 
+    print("Converting samples...")
+    start_time = time.time()
+    processed_chunks = interface.process_chunks(samples)
+    print("Samples processed in {0}".format(time.time() - start_time))
+    min_y = -40
+    max_y = np.max(processed_chunks)
+
     status_queue = Queue()
-    thread = Thread(target=render_thread, args=(interface, render_dir, samples, status_queue), daemon=True)
+    thread = Thread(
+        target=render_thread,
+        args=(interface, render_dir, samples, processed_chunks, status_queue, min_y, max_y),
+        daemon=True
+    )
     thread.start()
     
     for _ in trange(len(samples) // FFT_LENGTH):

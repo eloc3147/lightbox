@@ -99,11 +99,11 @@ impl ProcessorInterface {
         sample_duration: f32,
         impl_samples: Vec<f32>,
         impl_freqs: Vec<f32>,
-        np_samples: Vec<f32>,
-        np_freqs: Vec<f32>,
         output_path: String,
         width: u32,
         height: u32,
+        min_y: f32,
+        max_y: f32,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             let out_path = PathBuf::from(output_path);
@@ -113,7 +113,7 @@ impl ProcessorInterface {
                 .fill(&WHITE)
                 .map_err(|e| PyException::new_err(format!("Error doing thing A: {:?}", e)))?;
 
-            let areas = root_area.split_evenly((3, 1));
+            let areas = root_area.split_evenly((2, 1));
 
             let max_x = input_samples.len() as f32 * sample_duration;
             plot(
@@ -132,16 +132,6 @@ impl ProcessorInterface {
 
             let min_x = impl_freqs[0];
             let max_x = impl_freqs[impl_freqs.len() - 1];
-            let mut min_y = impl_samples[0];
-            let mut max_y = impl_samples[0];
-
-            for sample in &impl_samples[1..] {
-                if *sample < min_y {
-                    min_y = *sample;
-                } else if *sample > max_y {
-                    max_y = *sample;
-                }
-            }
             let y_margin = (min_y - max_y).abs() * 0.05;
 
             plot(
@@ -150,37 +140,11 @@ impl ProcessorInterface {
                 impl_samples,
                 min_x,
                 max_x,
-                min_y + y_margin,
+                min_y - y_margin,
                 max_y + y_margin,
                 "Impl Spectrum",
             )
             .map_err(|e| PyException::new_err(format!("Error rendering impl plot: {:?}", e)))?;
-
-            let min_x = np_freqs[0];
-            let max_x = np_freqs[np_freqs.len() - 1];
-            let mut min_y = np_samples[0];
-            let mut max_y = np_samples[0];
-
-            for sample in &np_samples[1..] {
-                if *sample < min_y {
-                    min_y = *sample;
-                } else if *sample > max_y {
-                    max_y = *sample;
-                }
-            }
-            let y_margin = (min_y - max_y).abs() * 0.05;
-
-            plot(
-                &areas[2],
-                np_freqs,
-                np_samples,
-                min_x,
-                max_x,
-                min_y + y_margin,
-                max_y + y_margin,
-                "NP Spectrum",
-            )
-            .map_err(|e| PyException::new_err(format!("Error rendering np plot: {:?}", e)))?;
 
             root_area.present().expect("Unable to write result to file");
             Ok(())
