@@ -3,7 +3,8 @@ use plotters::prelude::*;
 use pyo3::{exceptions::PyException, prelude::*};
 use std::{convert::TryInto, path::PathBuf};
 
-use lightbox::processing::{Processor, FFT_LENGTH, FFT_OUT_LENGTH};
+use lightbox::processing::{Processor, Window, FFT_LENGTH, FFT_OUT_LENGTH};
+use lightbox::visualizer::BasicFFT;
 
 fn plot<X, Y, B>(
     area: &DrawingArea<B, Shift>,
@@ -52,11 +53,12 @@ impl ProcessorInterface {
     #[new]
     fn init(py: Python, window: bool) -> PyResult<Self> {
         py.allow_threads(|| {
-            let processor = if window {
-                Processor::new_with_hamming()
-            } else {
-                Processor::new_without_window()
+            let window = match window {
+                true => Window::Hamming,
+                false => Window::None,
             };
+
+            let processor = Processor::new(window, Box::new(BasicFFT::new()));
 
             Ok(ProcessorInterface { processor })
         })
@@ -64,7 +66,7 @@ impl ProcessorInterface {
 
     /// Process one or more chunks with the lightbox processor
     /// Incomplete chunks will be cut short to the nearest complete chunk.
-    fn process_chunks(&self, py: Python, mut samples: Vec<f32>) -> Vec<f32> {
+    fn process_chunks(&mut self, py: Python, mut samples: Vec<f32>) -> Vec<f32> {
         py.allow_threads(|| {
             let num_chunks = samples.len() / FFT_LENGTH;
             let mut out_samples = vec![0f32; num_chunks * FFT_OUT_LENGTH];
