@@ -6,7 +6,10 @@ pub const FFT_OUT_LENGTH: usize = FFT_LENGTH / 2;
 
 pub enum Window {
     None,
+    Blackman,
     Hamming,
+    Hanning,
+    Nuttall,
 }
 
 pub struct Processor {
@@ -16,14 +19,15 @@ pub struct Processor {
 
 impl Processor {
     pub fn new(window_mode: Window, visualizer: Box<dyn Visualizer + Send + Sync>) -> Processor {
-        let window = match window_mode {
-            Window::None => None,
-            Window::Hamming => Some(
-                apodize::hamming_iter(FFT_LENGTH)
-                    .map(|f| f as f32)
-                    .collect::<Vec<f32>>(),
-            ),
-        };
+        let window = Some(window_mode)
+            .and_then(|w| match w {
+                Window::None => None,
+                Window::Blackman => Some(apodize::blackman_iter(FFT_LENGTH)),
+                Window::Hamming => Some(apodize::hamming_iter(FFT_LENGTH)),
+                Window::Hanning => Some(apodize::hanning_iter(FFT_LENGTH)),
+                Window::Nuttall => Some(apodize::nuttall_iter(FFT_LENGTH)),
+            })
+            .map(|w| w.map(|f| f as f32).collect::<Vec<f32>>());
 
         Processor { window, visualizer }
     }
