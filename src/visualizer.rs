@@ -1,14 +1,17 @@
 use microfft::real::rfft_1024;
 
+use crate::cmap::COLORMAP;
 use crate::processing::{FFT_LENGTH, FFT_OUT_LENGTH};
 
 pub trait Visualizer {
-    fn process(
+    fn convert_samples(
         &mut self,
         input: &mut [f32; FFT_LENGTH],
         output: &mut [f32; FFT_OUT_LENGTH],
         window: &Option<Vec<f32>>,
     );
+
+    fn render_samples(&mut self, input: &mut [f32; FFT_OUT_LENGTH], output: &mut [u8]);
 }
 
 pub struct BasicFFT;
@@ -20,7 +23,7 @@ impl BasicFFT {
 }
 
 impl Visualizer for BasicFFT {
-    fn process(
+    fn convert_samples(
         &mut self,
         input: &mut [f32; FFT_LENGTH],
         output: &mut [f32; FFT_OUT_LENGTH],
@@ -47,5 +50,18 @@ impl Visualizer for BasicFFT {
         }
 
         // TODO: Add nyquist filter?
+    }
+
+    fn render_samples(&mut self, input: &mut [f32; FFT_OUT_LENGTH], output: &mut [u8]) {
+        let len = std::cmp::min(FFT_OUT_LENGTH, output.len() / 3);
+
+        for (index, sample) in input[..len].iter().enumerate() {
+            // Clip outside -20..30 and rescale to 0..256
+            let sample = ((*sample + 20.0) / 50.0) * 256.0;
+            let quantized = COLORMAP[sample as usize];
+            output[(index * 3)] = quantized[0];
+            output[(index * 3) + 1] = quantized[1];
+            output[(index * 3) + 2] = quantized[2];
+        }
     }
 }

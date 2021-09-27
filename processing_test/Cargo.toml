@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 name = "processing_test"
 
 [dependencies]
+image = "0.23.14"
 lightbox = {path = "../"}
 plotters = "^0.3.1"
 pyo3 = {version = "0.14", features = ["extension-module"]}

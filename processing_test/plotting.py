@@ -177,6 +177,8 @@ def render_chunk(
     render_dir: Path,
     samples: np.ndarray,
     processed_samples: list[float],
+    led_samples: list[int],
+    led_count,
     chunk_index: int,
     status_queue: Queue,
     min_y: float,
@@ -187,6 +189,7 @@ def render_chunk(
         SAMPLE_TIME,
         processed_samples,
         FREQS,
+        led_samples,
         str(render_dir / "chunk_{0:04d}.png".format(chunk_index)),
         PLOT_WDITH,
         PLOT_HEIGHT,
@@ -202,6 +205,8 @@ def render_thread(
     render_dir: Path,
     samples: np.ndarray,
     processed_samples: list[float],
+    led_chunks: list[int],
+    led_count: int,
     status_queue: Queue,
     min_y: float,
     max_y: float
@@ -214,6 +219,8 @@ def render_thread(
             render_dir,
             samples[(idx * FFT_LENGTH):(idx * FFT_LENGTH) + FFT_LENGTH],
             processed_samples[(idx * FFT_OUT_LENGTH):(idx * FFT_OUT_LENGTH) + FFT_OUT_LENGTH],
+            led_chunks[(idx * led_count * 3):(idx * led_count * 3) + (led_count * 3)],
+            led_count,
             idx,
             status_queue,
             min_y,
@@ -237,19 +244,26 @@ def main() -> None:
     render_dir = Path.cwd() / "render"
     render_dir.mkdir(parents=True, exist_ok=True)
 
-    interface = ProcessorInterface(window=False)
+    led_count = 576
+    interface = ProcessorInterface(True, led_count)
 
     print("Converting samples...")
     start_time = time.time()
-    processed_chunks = interface.process_chunks(samples)
+    processed_chunks = interface.convert_samples(samples)
     print("Samples processed in {0}".format(time.time() - start_time))
+
+    print("Rendering LED view of samples...")
+    start_time = time.time()
+    led_chunks = interface.render_led_view(processed_chunks)
+    print("LED view rendered in {0}".format(time.time() - start_time))
+
     min_y = -40
     max_y = np.max(processed_chunks)
 
     status_queue = Queue()
     thread = Thread(
         target=render_thread,
-        args=(interface, render_dir, samples, processed_chunks, status_queue, min_y, max_y),
+        args=(interface, render_dir, samples, processed_chunks, led_chunks, led_count, status_queue, min_y, max_y),
         daemon=True
     )
     thread.start()
